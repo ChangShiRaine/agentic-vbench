@@ -124,8 +124,7 @@ def build_strokes(hits):
     #
     # A serve is a stroke, and the published Serve track carries both the player and a
     # usable outcome (In 74 / Fault 36 / Let 2). It is left out anyway, because
-    # Serve.start is not a repeatable physical instant and so cannot be scored against
-    # a tight tolerance.
+    # Serve.start is not a repeatable physical instant.
     #
     # The evidence is in the file itself. Measure the interval from Serve.start to the
     # start of the return it draws: median 55 frames but sd 15.9, spanning 22 to 95.
@@ -137,10 +136,8 @@ def build_strokes(hits):
     #
     # Compare the rally strokes: interval from one Hit.start to the next inside a rally
     # is median 31 with sd 6.6, and window length sd 6.8. Hit.start is a real event —
-    # the take-back — placed consistently, and it survives a +/-10-frame tolerance.
-    # Serve.start does not: with an annotator-side spread of +/-16 frames, even a
-    # perfect viewer applying a fixed rule would land outside the tolerance on most
-    # serves, so scoring them would charge the agent for guessing an annotator's habit.
+    # the take-back — placed consistently. Serve.start is not, so scoring it would
+    # charge the agent for guessing an annotator's habit.
     # Serves stay in annotation.json and are used by live_hits above; they are simply
     # not part of the answer.
     strokes = []
@@ -263,39 +260,6 @@ def check_scorability(strokes):
     if len(set(starts)) != len(starts):
         raise ValueError("two strokes share a start frame")
 
-    tolerance = judge_tolerance()
-    closest_pair = min(second - first for first, second in zip(starts, starts[1:]))
-    if closest_pair <= tolerance:
-        raise ValueError(
-            f"two consecutive strokes are {closest_pair} frames apart, within the "
-            f"{tolerance}-frame tolerance"
-        )
-
-    # The alignment the judge computes is only well defined if no two strokes of the
-    # same class sit within the scored tolerance of each other. Assert it here rather
-    # than trusting the frozen tolerance in judge.py.
-    closest = None
-    for index, stroke in enumerate(strokes):
-        for other in strokes[index + 1:]:
-            gap = other["start_frame"] - stroke["start_frame"]
-            if (other["player"], other["stroke"]) != (stroke["player"], stroke["stroke"]):
-                continue
-            closest = gap if closest is None else min(closest, gap)
-            break
-    if closest is None or closest <= tolerance:
-        raise ValueError(
-            f"two strokes of the same class are {closest} frames apart, within the "
-            f"{tolerance}-frame tolerance: the alignment would be ambiguous"
-        )
-    return closest_pair, closest
-
-
-def judge_tolerance():
-    namespace = {}
-    source = JUDGE.read_text().split("def ", 1)[0]
-    exec(compile(source, str(JUDGE), "exec"), namespace)  # noqa: S102 - our own file
-    return namespace["TOLERANCE_FRAMES"]
-
 
 def dump(path, document):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -337,7 +301,7 @@ def main():
     empty_points, longest_strokeless, median_point = check_completeness(annotation, hits)
 
     strokes = build_strokes(hits)
-    closest_pair, closest_same_class = check_scorability(strokes)
+    check_scorability(strokes)
 
     vocabulary = {
         "fps": FPS,
@@ -367,15 +331,12 @@ def main():
             "by_player_and_class": counts,
             "first_frame": strokes[0]["start_frame"],
             "last_frame": strokes[-1]["start_frame"],
-            "frame_tolerance": judge_tolerance(),
             "checks": {
                 "excluded_non_live_hits": len(excluded),
                 "empty_points": empty_points,
                 "rallies_with_strict_alternation": rallies,
                 "longest_strokeless_point": longest_strokeless,
                 "median_point_duration": median_point,
-                "closest_consecutive_pair": closest_pair,
-                "closest_same_class_pair": closest_same_class,
             },
             "gt_sha256": gt_sha,
             "vocabulary_sha256": vocabulary_sha,

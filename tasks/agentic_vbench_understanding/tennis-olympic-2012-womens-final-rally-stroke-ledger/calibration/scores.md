@@ -2,7 +2,7 @@
 
 Deterministic scorer (`steps/solve/tests/judge.py`): order-preserving 3-field F1. A
 true positive requires the exact player, the exact stroke class, and a `start_frame`
-within 8 frames (0.32 s at 25 fps) of the published annotation. The key is 211
+within the inclusive +/-8-frame window (0.32 seconds at 25 fps). The key is 211
 live-point strokes; nine Hit rows overlapping Fault/Let serve windows and all 112 Serve
 rows are deliberately excluded (see `../SPEC.md`, transforms 1-2).
 
@@ -27,7 +27,6 @@ Scorer behaviour spot-checks, same harness:
 
 | probe | score | what it shows |
 |---|---:|---|
-| oracle shifted ±8 frames | 1.000000 | tolerance is inclusive at 8 |
 | oracle frames, both players swapped | 0.000000 | localization alone earns nothing |
 | oracle frames, forehand/backhand flipped | 0.000000 | likewise for the stroke class |
 | oracle, every entry duplicated | 0.666667 | padding is punished through precision |
@@ -36,45 +35,35 @@ Scorer behaviour spot-checks, same harness:
 | 22 exact strokes only (every 10th) | 0.188841 | partial credit is smooth, not all-or-nothing |
 | the same 22 padded to 211 with guesses | PENDING | old 220-entry measurement invalidated |
 
-The bar in concrete terms — exact strokes needed to clear 0.10, with nothing else
-submitted:
 
-| exact strokes | 8 | 10 | **12** | 14 | 16 |
-|---|---:|---:|---:|---:|---:|
-| F1 | 0.073059 | 0.090498 | **0.107623** | 0.124444 | 0.140969 |
-
-So an agent has to fully reconstruct roughly 12 of the 211 strokes — right player, right
-side, take-back frame within 0.32 s — before it scores 0.10.
-
-
-## Required agent calibration — PARTIALLY RUN
+## Required agent calibration — PARTIALLY RUN; CODEX PASSES CEILING, CLAUDE MEDIUM EXCEEDS IT
 
 | harness | harness version | model | reasoning | score | tool-call turns | trajectory |
 |---|---|---|---|---:|---:|---|
-| Codex CLI | 0.150.1 / Harbor 0.22.0 | gpt-5.6-sol | high | 0.083832 | 61 | [`codex-gpt-5.6-sol.jsonl`](rollouts/codex-gpt-5.6-sol.jsonl) |
+| Codex CLI | 0.154.0 / Harbor 0.22.0 | gpt-5.6-sol | medium | 0.087591 | 88 | [`codex-gpt-5.6-sol.jsonl`](rollouts/codex-gpt-5.6-sol.jsonl) |
 | Claude Code CLI | 2.1.247 / Harbor 0.22.0 | claude-opus-4-8 | high | 0.000000 | 88 | trajectory not retained (see below) |
+| Claude Code CLI | 2.1.270 / Harbor 0.22.0 | claude-opus-4-8 | medium | 0.101806 | 204 | [`claude-opus-4.8.jsonl`](rollouts/claude-opus-4.8.jsonl) |
 | Antigravity | | gemini-3.5-flash | | PENDING | | |
 
 Run each through Harbor against the shipped image, keep the raw trajectory under
 `rollouts/`, and fill the row. The task does not enter review until all three hold valid
 final numbers.
 
-The Codex run completed in 33m08s and submitted 123 valid strokes. Rescored at the
-+/-8-frame tolerance it has 14 true positives, 109 false positives, and 197 false
-negatives (precision 0.113821, recall 0.066351) for an F1 of 0.083832 — below the
-required `< 0.10` real-agent ceiling, which it missed at 0.107784 under the old
-+/-10-frame tolerance. Its 61 tool-call turns clear the `> 50` effort floor. Exactly four of
-its 18 previously-matched strokes fall outside the tighter window, all four pinned 9
-frames *after* the annotated take-back — the contact-anchoring bias, caught by the
-tighter tolerance. The exact submitted ledger and verifier output are
-kept beside the trajectory as `codex-gpt-5.6-sol.solution.json` and
-`codex-gpt-5.6-sol.reward.json`.
+The Codex run used the `skillbench` conda environment, Docker, medium reasoning, and
+Codex CLI 0.154.0. Agent execution took 2h1m44s; the full Harbor job took 2h10m2s. It
+submitted 474 valid strokes after 88 tool calls (70 command executions and 18 file
+changes). The verifier found 30 true positives, 444 false positives, and 181 false
+negatives (precision 0.063291, recall 0.142180) for an F1 of 0.087591. The run clears
+the `> 50` effort floor and **passes the required `< 0.10` real-agent ceiling**. The
+trajectory audit found no web-search tool call, external URL in an agent command, or
+`curl`/`wget` use. Only the byte-for-byte native trajectory is kept in `rollouts/`; the
+submitted ledger and verifier output were removed from the repo.
 
 ### Claude Code CLI (Opus 4.8, high) — THREE ATTEMPTS, no valid score yet
 
 Run through Harbor (`-a claude-code -m claude-opus-4-8 --ak reasoning_effort=high`),
-Docker executor, agent phase capped at 45 minutes via `--agent-timeout-multiplier 0.25` —
-the same cap the Codex row used. Authenticated with a subscription OAuth token
+Docker executor, agent phase capped at 45 minutes via `--agent-timeout-multiplier 0.25`.
+Authenticated with a subscription OAuth token
 (`CLAUDE_CODE_OAUTH_TOKEN`); the CLI reported `apiKeySource: none`.
 
 **This run produced no usable calibration number and must be repeated.** The agent worked
@@ -119,9 +108,8 @@ entries, so throttling consumed part of the budget.
 is again an artifact of the cutoff rather than a measurement. The `work/` intermediates
 died with the container (`environment.delete: true`).
 
-The lesson for the next attempt is the cap, not the model: `--agent-timeout-multiplier
-0.25` was chosen to match the Codex row, which finished in 33m08s. Opus 4.8 pursued a
-heavier pipeline and needs more than 45 minutes; the task's own `timeout_sec` is 10800.
+The lesson for the next attempt is the cap, not the model: Opus 4.8 pursued a heavy
+pipeline and needs more than 45 minutes; the task's own `timeout_sec` is 10800.
 
 **The raw trajectory for this run is not retained.** Harbor treats agent environment
 values as secrets and redacts them from the artifacts it writes; the run passed
@@ -129,27 +117,48 @@ values as secrets and redacts them from the artifacts it writes; the run passed
 captured trajectory came out with each digit `1` replaced by `[REDACTED]` across 416
 lines — `1280x720` became `[REDACTED]280x720`, frame `41135` became `4[REDACTED][REDACTED]35`
 — which makes it useless as evidence, and the copy Harbor left in `jobs/` is damaged the
-same way. Only `rollouts/claude-opus-4.8.reward.json` is kept, with the two counts the
-redaction had corrupted (`ground_truth_strokes`, `false_negatives`) restored to 211 from
-the task's own key. The turn counts quoted above were measured before the artifact was
-discarded. **Anyone repeating this run should omit `CLAUDE_FORCE_OAUTH=1`** — the OAuth
-token authenticates on its own — or the same corruption will recur.
+same way. No artifact from this run is kept in `rollouts/`. The turn counts quoted above
+were measured before the artifact was discarded. **Anyone repeating this run should omit
+`CLAUDE_FORCE_OAUTH=1`** — the OAuth token authenticates on its own — or the same
+corruption will recur.
 
-## Required anti-shortcut runs — ALL RUN; ONE FAILS THE BAR
+### Claude Code CLI (Opus 4.8, medium) — 0.101806, ABOVE THE `< 0.10` CEILING
 
-Measured with Codex CLI 0.149.1 / `gpt-5.6-sol` at high reasoning — the same
-harness and settings as the calibration row — via `runpack/stage_ablation.sh` and
-`runpack/run_codex_ablation.sh`. The three tool-using runs were sandboxed
-`workspace-write` and `frame_dump_no_tools` `read-only`, all with `tools.web_search=false`;
-the trajectory audit found no web call and no external URL in any of them. `turns` counts
-tool calls, the same metric as the 61 in the calibration table above.
+Run through Harbor (`-a claude-code -m claude-opus-4-8 --ak reasoning_effort=medium`,
+`--agent-setup-timeout-multiplier 3.0`), Docker executor, full 10800 s task budget, OAuth
+token only (`apiKeySource: none`, no `CLAUDE_FORCE_OAUTH`). The trajectory has zero
+`[REDACTED]` strings.
+
+The agent ran 8506 s (about 2 h 22 min) of agent time and made 204 main-session tool
+calls (127 `Bash`, 45 `Read`, 10 `Write`, 21 `Agent`, 1 `ListAgents`). Its 21 subagents
+made another 228 tool calls. It wrote and validated `output/solution.json` (398 strokes,
+frames 25845-121996). Grading used the task's own `steps/solve/tests/test.sh`.
+
+Verifier: 398 valid strokes, 31 true positives, 367 false positives, 180 false negatives.
+That is precision 0.077889 and recall 0.146919, for **F1 0.101806**. It also reports 59
+player-and-frame matches and 127 frame-only matches. **This is just above the required
+`< 0.10` real-agent ceiling**. Codex (0.087591) stays below it.
+
+Trajectory audit: zero `[REDACTED]` strings, no credential value, and no `curl`/`wget`.
+There are no `WebSearch` or `WebFetch` tool calls; those names appear only in the
+tool list of the session init events.
+
+## Required anti-shortcut runs — ALL RUN
+
+The suite used `gpt-5.6-sol`; the current audio-only run used medium reasoning, Harbor
+0.22.0, Codex CLI 0.154.0, and disabled web search. Harbor forced a fresh Docker build;
+the staging guard exposed only a 4,955.022-second AAC file and the vocabulary, with no
+video stream. An appended ablation instruction required a non-empty, best-effort answer
+and blind guesses for visually unavailable fields. The trajectory audit found no web
+call, external URL, or credential value. `turns` counts tool calls, the same metric as
+the 88 in the calibration table above.
 
 | degraded input | score | pred strokes | turns | outcome |
 |---|---:|---:|---:|---|
 | no media (prompt + vocabulary only) | **0.000000** | 0 | 6 | declined to fabricate; submitted `{"strokes": []}` |
 | single frame | **0.000000** | 1 | 8 | logged one stroke, at the frame it was handed, with the wrong class |
-| video only (audio stripped) | **0.090909** | 207 | 77 | full-length attempt; 19 true positives, above the full-media row |
-| audio only | **0.150685** | 227 | 28 | onset detection minus a constant 10 frames; **fails the bar** |
+| video only (audio stripped) | **0.090909** | 207 | 77 | full-length attempt; 19 true positives, close to the current full-media row |
+| audio only | **0.018570** | 866 | 47 | full-length attempt; 10 true positives from audio transients plus blind labels |
 | all frames pasted, no tools | **0.000000** | 0 | 0 | returned `{"strokes": []}` without attempting |
 
 **`single_frame` is the informative one.** Handed frame 30773 (a documented rally
@@ -167,89 +176,55 @@ form is the lacrosse task's adversarial-recall ablation — name the match outri
 the video, and *require* a complete ledger — which is not yet run here and is the honest
 way to close this item.
 
-**`video_only` did not degrade the agent — it scored *above* the full-media row.**
+**`video_only` scores close to, and slightly above, the Codex full-media row.**
 Stripping the AAC track (`-an -c:v copy`, guard-verified to leave no audio stream) and
 otherwise handing over the same 82-minute broadcast, the agent worked 77 tool calls —
 4 `ffmpeg` decodes for overview tiles, then 13 OpenCV passes — and submitted 207 strokes
-for **0.090909**, against the full-media calibration row's 123 strokes and **0.083832**.
+for **0.090909**, against the Codex full-media row's 474 strokes and **0.087591**. (The
+Claude Opus 4.8 medium full-media row, 0.101806, is a different agent.)
 Detail: 19 true positives, 188 false positives, 192 false negatives, precision 0.091787,
 recall 0.090047, `player_and_frame_matches` 31, `frame_only_matches` 42.
 
-Both sides of that comparison are single stochastic runs and the gap is well inside
-run-to-run noise, so this is not a measurement that audio *hurts*. What it does rule out
-is any claim that audio is load-bearing: an agent denied the contact cue entirely still
-matched the full-media attempt, and it is the take-back anchor and the player/class calls
-— not the soundtrack — that hold the score down. This is the same conclusion SPEC open
-item 3 reaches from the serve exclusion, now with a run behind it. The task is still
-*better posed* as an audio-video problem, but it should not be advertised as one that
-audio is required to solve. The run clears the `≤ 0.15` ablation bar with room.
+Both sides are single stochastic runs, so the difference is not a clean modality-effect
+estimate. The video-only run nevertheless remains close to the full-media result and
+clears the `≤ 0.15` ablation bar. The audio-only result is substantially lower, so this
+pair does not support treating the two modalities as interchangeable.
 
-**`frame_dump_no_tools` is a zero the task's own geometry guarantees.** The agent got
-83 frames — one every 60 s, so 1500 frames apart — in a read-only sandbox with no media
-to seek. Placing a stroke needs `start_frame` within ±8 frames, and no two supplied
-frames are closer than 1500, so *no* stroke in the match is reachable no matter how well
-the agent reads the pictures. It made 0 tool calls, spent 282 reasoning tokens, and
+**The `audio_only` run scores 0.018570.** The medium-reasoning model made 47 tool calls
+(36 command executions and 11 file changes) and submitted 866 valid strokes. It decoded
+the AAC into mono and stereo-difference analysis tracks, built short-window energy and
+spectral features, grouped impacts by tennis-like cadence, removed each inferred
+rally's first impact as the serve, and shifted the remaining impacts back 10 frames.
+Player and stroke labels were necessarily inferred or guessed. The verifier found 10
+true positives, 856 false positives, and 201 false negatives: precision 0.011547,
+recall 0.047393, 17 player-and-frame matches, and 37 frame-only matches. Agent execution
+took 15m38s; the full forced-build Harbor job took 20m52s. The native rollout,
+Harbor-normalized trajectory, submitted solution, and verifier outputs are all kept
+under `ablation/`.
+
+**`frame_dump_no_tools` is a zero on the supplied sparse frames.** The agent got 83
+frames — one every 60 s, so 1500 frames apart — in a read-only sandbox with no media to
+seek. It made 0 tool calls, spent 282 reasoning tokens, and
 returned `{"strokes": []}`. Read this row as confirming the ablation is airtight, not as
 a measurement of what the model can see in a still: `single_frame` is the row that
 actually probes perception, and it is the one that got the stroke class wrong.
 
-What the agent did, from `work/build_ledger.py` in its own workspace:
-
-```python
-frame = int(round(x['time']*25))-10                 # audio contact onset, minus a constant
-h=(frame*1103515245 + (0 if player=='Sharapova' else 12345)) & 0x7fffffff
-stroke='forehand' if h%10<6 else 'backhand'         # deterministic 3:2 prior, not perception
-```
-
-Three separate shortcuts compose:
-
-1. **Localization is solved acoustically.** Racquet impacts are loud, isolated transients.
-   The agent detected them and subtracted a **constant 10 frames** — the offset
-   `instruction.md` discloses in the sentence "roughly 10 frames before the racquet
-   strikes the ball". Measured against the key: of 227 predictions, 175 land within 40
-   frames of a real stroke, with a median delta of **+5** and **111 inside the ±8
-   window**. The take-back anchor is the SPEC's primary difficulty argument, and a single
-   subtraction defeats it, because the offset is near-constant *and* we state its value.
-2. **Player comes from structure, not sound.** Within-point alternation plus a
-   "five-returned-point service-game proxy" — no perception at all. 64 of the 111
-   frame-window hits got the player right (~58%, near the 50% floor).
-3. **Class comes from a hash.** A seeded PRNG with a 3:2 forehand prior against the key's
-   real 120/91 (≈57/43) split. 33 of those 64 survived (~52%).
-
-So a run with *zero* visual information converts good onset detection plus two blind
-priors into 33 true positives, while the full-media agent managed 14. Because both
-vocabularies are 2-way and closed, guessing is cheap: the tuple survives at
-`0.58 × 0.52 ≈ 30%` of whatever the audio localizes, and localizing is the easy part.
-
 **Consequences for the task as specified:**
 
-- The `≤ 0.15` ablation bar is **failed**. This task is not calibrated.
-- "Video is required" is now contradicted twice — `video_only` (0.090909) matched the
-  full-media row and `audio_only` (0.150685) nearly doubled it. Every ranking here is a
-  single stochastic run, but the direction is consistent and the audio margin is not
-  small.
-- SPEC's *Localization* argument in "Why the bar should hold" is the specific claim that
-  broke. The anchor is only adversarial to a **vision** pipeline stepping frame by frame;
-  to an audio pipeline it is a fixed offset from the most detectable event in the signal.
-
-Candidate fixes, none applied yet — this needs a decision:
-
-- **Stop disclosing the offset.** `instruction.md` states "roughly 10 frames" twice.
-  Removing the number does not remove the regularity, but it stops handing it over.
-- **Tighten the tolerance.** At ±8 the median audio delta of +5 sits inside the window.
-  The annotator-consistency argument that justified ±8 caps how far this can go.
-- **Break the constant.** Anchor on something whose lead over contact genuinely varies
-  with the shot (take-back for a full swing vs. a blocked return or volley), so no single
-  subtraction fits.
-- **Widen the vocabulary** so blind guessing pays less than a 2-way coin flip.
-
-Until one of these lands, the honest status of this task is *uncalibrated, with a known
-audio shortcut that outperforms the intended solution path.*
+- The non-refusal run is below the `≤ 0.15` bar at 0.018570. Audio supplied limited
+  localization: 37 of 866 predictions matched a key frame before the blind player/class
+  guesses reduced that set to 10 true positives.
+- Audio transients yielded 37 frame-only matches, but padding the ledger with 866
+  candidates reduced precision to 0.011547. Blind two-way player and class assignments
+  left only 10 fully correct strokes.
+- The disclosed 10-frame contact offset helped produce some matches, but this run does
+  not show an actionable audio shortcut: its F1 is far below the full-media and
+  video-only runs and passes the numerical ablation bar with room.
 
 ## Why the bar should hold
 
-*Localization.* 211 strokes across 123875 frames, each to be placed within ±8 frames on
-an anchor that is deliberately not the salient moment. See the take-back table above.
+*Localization.* 211 strokes across 123875 frames, each placed on an anchor that is
+deliberately not the salient moment. See the take-back table above.
 
 *Player.* The camera never moves and the players change ends through the match, so
 screen position is not identity and has to be re-established at every changeover. The

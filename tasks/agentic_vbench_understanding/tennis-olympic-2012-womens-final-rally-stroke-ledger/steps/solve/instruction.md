@@ -52,10 +52,15 @@ Two things this is **not**:
   a ball for half a second with the racquet still in front of her; the take-back is when
   the racquet itself starts going back.
 
-`start_frame` must be within **8 frames (0.32 seconds)** of the true frame for the
-stroke to be counted, so pin each one carefully rather than estimating. Sampling one
-frame every half second is not enough to place a stroke this tightly; step frame by
-frame around each swing.
+The judge counts a predicted event as correct only when all three fields reconstruct
+the same ground-truth stroke: `player` is correct, `stroke` identifies the correct
+stroke type (`forehand` or `backhand`), and `start_frame` is within **±8 frames,
+inclusive (±0.32 seconds at 25 fps)** of the true frame. A prediction with any one of
+these fields wrong is not a correct event detection. The human reaction and timing
+error for recognizing and responding to an event is approximately 0.2 seconds, so this
+window allows for that uncertainty.
+Pin each stroke carefully rather than estimating. Sampling one frame every half second
+is not enough to place a stroke this tightly; step frame by frame around each swing.
 
 ## Vocabulary
 
@@ -69,7 +74,10 @@ are:
 
 `backhand`, `forehand`
 
-Notes on how the vocabulary is applied:
+### How to detect the stroke type
+
+Classify the `stroke` field for every detected event by the side of the player's body
+on which she takes the shot:
 
 - `forehand` / `backhand` classify the stroke by which side of the body the player takes
   it on. Use the player's own handedness, not the side of the screen: both of these
@@ -110,7 +118,7 @@ example:
 
 ```bash
 ffmpeg -v error -i /workspace/materials/match.mp4 \
-       -vf "select=between(n\,30770\,30830)" -vsync 0 /workspace/work/f_%05d.png
+       -vf "select=between(n\,30000\,30230)" -vsync 0 /workspace/work/f_%05d.png
 ```
 
 The audio track is part of the material: racquet strikes produce audible transients,

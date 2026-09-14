@@ -14,16 +14,7 @@ import os
 import stat
 from pathlib import Path
 
-# 8 frames = 0.32 s at the video's 25 Hz. A stroke's start_frame is the take-back,
-# roughly 10 frames before racquet-ball contact; measured across the annotation, the
-# take-back is placed with a spread of about +/-7 frames (interval between successive
-# strokes in a rally: median 31, sd 6.6), so this tolerance sits just above one
-# standard deviation of the annotator's own consistency.
-#
-# The tightest gap between any two consecutive strokes in the match is 17 frames, so a
-# prediction cannot drift onto its neighbour; and the closest two strokes of the SAME
-# class start 47 frames apart, so the one-to-one alignment stays well defined with a
-# wide margin. build_ground_truth.py asserts both against this constant.
+# Inclusive +/-8-frame matching window.
 TOLERANCE_FRAMES = 8
 MAX_PREDICTED_STROKES = 2000
 MAX_SOLUTION_BYTES = 2_000_000
@@ -105,7 +96,7 @@ def localized(prediction, truth):
     return abs(prediction["start_frame"] - truth["start_frame"]) <= TOLERANCE_FRAMES
 
 
-def matches(prediction, truth):
+def matches_complete_event(prediction, truth):
     return (
         prediction["player"] == truth["player"]
         and prediction["stroke"] == truth["stroke"]
@@ -135,7 +126,9 @@ def monotonic_true_positives(predictions, ground_truth, matcher):
 
 
 def score(predictions, ground_truth, predicted_count):
-    true_positives = monotonic_true_positives(predictions, ground_truth, matches)
+    true_positives = monotonic_true_positives(
+        predictions, ground_truth, matches_complete_event
+    )
     precision = true_positives / predicted_count if predicted_count else 0.0
     recall = true_positives / len(ground_truth) if ground_truth else 0.0
     reward = (
