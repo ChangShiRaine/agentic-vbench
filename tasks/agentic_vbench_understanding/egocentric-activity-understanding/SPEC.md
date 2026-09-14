@@ -35,7 +35,8 @@ output_schema: >
                 "start_frame": <int, 0-25691>,
                 "end_frame": <int, > start_frame>}, ...]}
   Ordered by non-decreasing start_frame; frame 0 is the first frame, 24 fps.
-  Scored with a +/-12-frame (0.5 s) tolerance on BOTH boundaries; see the scorer.
+  Scored with a +/-12-frame (0.5 s) tolerance on BOTH boundaries, stated in
+  instruction.md and enforced by judge.py TOLERANCE_FRAMES.
 
 # 4. Evidence chain: far-apart moments the answer depends on.
 evidence:
@@ -78,6 +79,11 @@ scorer:
            predicted action is a true positive only if the verb matches, the noun SET
            matches, and both frame boundaries are within 12 frames of the annotation,
            under a one-to-one matching. official_score = F1.
+           Tolerance rationale: the published labels give no boundary protocol, so
+           each start and end is a visual judgement of when a hand motion begins or
+           stops. Human eye event-detection error is about 0.2 s (~5 frames at 24 fps).
+           The annotator and the agent can each be off by that much, which is ~0.4 s
+           combined; +/-12 frames (0.5 s) covers it.
            `verb_and_boundary_matches` and `boundary_only_matches` are reported as
            diagnostics and never enter the reward."
   oracle_reward: 1.0        # measured
@@ -145,8 +151,11 @@ ever stops matching what the answer key assumes.
    five-hour rate limit before writing `solution.json`; its 0.033613 is salvaged from
    the checkpointed 66-action working ledger and covers only the first 46% of the
    video. Both the initial run and its resumed continuation are stored in
-   `calibration/rollouts/claude-opus-4.8.jsonl.gz.part-*`. A completed Claude Code run, and an
-   Antigravity run, are still needed before review.
+   the raw audit copy recorded (SHA-256 and byte length) in
+   `calibration/rollouts/manifest.json`. **Due to model credit limits, the contributor
+   cannot complete the remaining runs, so reviewer re-verification is needed:** a
+   completed Claude Code run to replace this salvaged diagnostic, and the Antigravity
+   run, which has not been run.
 
 3. **Ground-truth tier.** The GTEA Gaze+ annotation is `human-verified` rather than
    `machine-truth`, and the family prefers the highest tier available. For an

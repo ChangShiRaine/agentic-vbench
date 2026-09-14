@@ -31,6 +31,14 @@ wearer's hands, described as a verb plus the objects it acts on.
   different things at once (opening a drawer while already holding a carton). Report
   each one separately.
 
+A predicted action counts as correct only when its `verb` matches, its `nouns` are the
+same set, and **both** `start_frame` and `end_frame` are within **±12 frames, inclusive
+(±0.5 seconds at 24 fps)** of the true boundaries. A human watching a video misjudges
+when a visible motion starts or ends by roughly 0.2 seconds. Both the reference
+boundaries and yours are placed by eye, so the window allows for that error on each
+side. Sampling one frame every second is not enough to place a boundary this tightly;
+step frame by frame around each start and end.
+
 ## Vocabulary
 
 Use `verb` exactly as spelled in `vocabulary.json`. The 15 verbs are:
@@ -71,8 +79,8 @@ Write `/workspace/output/solution.json` in exactly this shape:
 ```json
 {
   "actions": [
-    {"verb": "turn on", "nouns": ["burner"], "start_frame": 1000, "end_frame": 2000},
-    {"verb": "pour", "nouns": ["oil", "oil_container", "skillet"], "start_frame": 2000, "end_frame": 3000}
+    {"verb": "turn on", "nouns": ["microwave"], "start_frame": 1000, "end_frame": 2000},
+    {"verb": "pour", "nouns": ["tea", "cup"], "start_frame": 2000, "end_frame": 3000}
   ]
 }
 ```

@@ -3,6 +3,9 @@
 Deterministic scorer (`steps/solve/tests/judge.py`): order-insensitive,
 maximum-cardinality one-to-one 4-field F1. A true positive requires the exact verb,
 the exact noun set, and both frame boundaries within the fixed ±12-frame window.
+The window is stated in `steps/solve/instruction.md`. Its basis is the ~0.2 s error of
+human eye event detection, allowed for on both the annotator's side and the agent's side
+(~0.4 s combined, inside ±0.5 s at 24 fps).
 
 A task clears the family bar when the oracle scores 1.0, an empty submission scores
 ≤ 0.10, every real agent scores below 0.10, each ablation scores ≤ 0.15, and a real
@@ -32,8 +35,13 @@ Scorer behaviour spot-checks:
 
 | harness | harness version | model | reasoning | score | tool-call turns | trajectory |
 |---|---|---|---|---:|---:|---|
-| Codex CLI | 0.153.3 | gpt-5.6-sol | high | 0.000000 | 76 | `rollouts/codex-gpt-5.6-sol.jsonl` |
-| Claude Code CLI | 2.1.246 | claude-opus-4-8 | high | 0.033613 (salvaged, run cut short) | 302 | `rollouts/claude-opus-4.8.jsonl.gz.part-*` |
+| Codex CLI | 0.153.3 | gpt-5.6-sol | high | 0.000000 | 76 | `codex-gpt-5.6-sol.jsonl` in `rollouts/manifest.json` |
+| Claude Code CLI | 2.1.246 | claude-opus-4-8 | high | 0.033613 (salvaged, run cut short) | 302 | `claude-opus-4.8.jsonl.gz` in `rollouts/manifest.json` |
+| Antigravity | | gemini-3.5-flash | | PENDING — not run due to credit limits; needs reviewer run | | |
+
+Raw trajectories are not committed. `rollouts/manifest.json` records each one's SHA-256,
+byte length, and status: the Codex run is pre-contract evidence, and the Claude run is
+an interrupted diagnostic. Solutions and verifier rewards stay in `rollouts/`.
 
 ### Codex CLI (GPT-5.6 Sol, high) — 0.000000
 
@@ -42,9 +50,7 @@ force-built Docker image and explicit `reasoning_effort=high` (job
 `egocentric-gpt-5-6-sol-high-clean-20260904-r1`, task checksum
 `08e7e8747d2a892b24dfdb1f5c1ad39077a90114ea355fae2a7519082592eff9`). Total job
 wall time was 24m 4s, including 2m 56s of agent setup; agent execution was 19m 52s.
-The 82-step Harbor ATIF trajectory contains 76 tool calls (75 `exec`, one `wait`) and
-is stored as JSONL with session metadata and final metrics, apart from deterministic
-personal-path redaction.
+The 82-step Harbor ATIF trajectory contains 76 tool calls (75 `exec`, one `wait`).
 
 | | |
 |---|---:|
@@ -83,8 +89,7 @@ subscription's five-hour rate window, which the CLI reports in its own
 
 The resumed attempt restored the initial attempt's conversation via
 `--load-trajectory` / `claude --resume`, so the two segments are one continuous agent
-transcript. The split gzip `rollouts/claude-opus-4.8.jsonl.gz.part-*` reconstructs the
-concatenated JSONL, delimited by `harbor_rollout_marker` records. Across both segments
+transcript; `harbor_rollout_marker` records delimit the segments. Across both segments
 the agent made 302 tool calls
 (193 `Read`, 92 `Bash`, 15 `Agent` subagent spawns, two `Write`) in 533 assistant turns.
 
@@ -116,8 +121,9 @@ append-after-each-region ledger, which is the only reason a partial result survi
 Read this number as a floor, not as a clean 45-minute trial comparable to the Codex
 row: it reflects an incomplete pass over the video and a resumed run whose container
 (and therefore whose intermediate contact sheets and annotation guide) did not survive
-the restart. It is below the `< 0.10` family target, but a completed run is still
-needed before this row can be treated as final.
+the restart. It is below the `< 0.10` family target, but it is not a final row. **Due to model
+credit limits, the contributor cannot complete this run, so a reviewer needs to re-run
+and verify it.**
 
 ## Anti-shortcut runs
 
